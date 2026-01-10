@@ -1,0 +1,26 @@
+指标名称,参数名称,参数值,描述
+MACD,fast,12,快速移动平均线周期
+MACD,slow,26,慢速移动平均线周期
+MACD,signal,9,信号线周期
+KDJ,n,9,RSV计算周期
+KDJ,m1,3,K值平滑参数
+KDJ,m2,3,D值平滑参数
+RSI,periods,14,RSI计算周期
+BOLL,window,20,布林带均线周期
+BOLL,std_multiplier,2,标准差倍数
+MA,periods,"[5, 10, 20, 30, 60]",移动平均线周期列表
+EMA,periods,"[10, 52]",指数移动平均线周期列表
+TREND_A,ma_period,9,移动平均线周期
+TREND_A,ma_type,EMA,移动平均线类型
+SUPERTREND,atr_length,9,ATR计算周期
+SUPERTREND,multiplier,3.9,ATR乘数
+QQEMOD,rsi_length_primary,6,主QQE的RSI周期
+QQEMOD,rsi_smoothing_primary,5,主QQE的RSI平滑周期
+QQEMOD,qqe_factor_primary,3.0,主QQE因子
+QQEMOD,threshold_primary,3.0,主QQE阈值
+QQEMOD,rsi_length_secondary,6,副QQE的RSI周期
+QQEMOD,rsi_smoothing_secondary,5,副QQE的RSI平滑周期
+QQEMOD,qqe_factor_secondary,1.61,副QQE因子
+QQEMOD,threshold_secondary,3.0,副QQE阈值
+QQEMOD,bollinger_length,50,布林带长度
+QQEMOD,bollinger_multiplier,0.35,布林带乘数

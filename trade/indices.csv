@@ -1,0 +1,11 @@
+﻿code,name,source,description
+sh000001,上证指数,china,上海证券交易所综合指数
+sz399001,深证成指,china,深圳证券交易所成份股指数
+sz399006,创业板指,china,深圳证券交易所创业板指数
+bj899050,北证50,china,北京证券交易所北证50指数
+sh000688,科创50,china,上海证券交易所科创板50指数
+^HSI,恒生指数,china,香港恒生指数
+^HSTECH,恒生科技,china,香港恒生科技指数
+^DJI,道琼斯,china,美国道琼斯工业平均指数
+^IXIC,纳斯达克,china,美国纳斯达克综合指数
+^GSPC,标普500,china,美国标准普尔500指数

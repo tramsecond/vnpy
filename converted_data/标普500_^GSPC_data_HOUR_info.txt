@@ -1,0 +1,9 @@
+合约代码: GSPC
+交易所: GLOBAL
+周期: HOUR
+Sheet名称: 小时线数据
+VeighNa代码: GSPC.GLOBAL
+数据行数: 2287
+时间范围: 2024-07-12 14:30:00 到 2026-01-09 20:30:00
+
+导入时在VeighNa中选择周期: HOUR

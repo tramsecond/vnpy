@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-# 数据目录
-DATA_DIR = Path(r"D:\tradegit\trade\index_data")
-OUTPUT_DIR = Path(r"D:\vnpy\vnpy\converted_data")
+# 数据目录（支持多个数据源）
+INDEX_DATA_DIR = Path(r"D:\vnpy\vnpy\trade\index_data")  # 指数数据
+STOCK_DATA_DIR = Path(r"D:\vnpy\vnpy\trade\stock_data")  # 股票数据
+OUTPUT_DIR = Path(r"D:\vnpy\vnpy\converted_data")  # 输出目录
 
 # 创建输出目录
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -38,20 +39,30 @@ SYMBOL_MAP = {
 def extract_symbol_and_exchange(filename: str) -> tuple[str, str]:
     """从文件名提取合约代码和交易所"""
     # 移除扩展名
-    name = filename.replace("_data.xlsx", "").replace(".xlsx", "")
+    name = filename.replace("_数据.xlsx", "").replace("_技术数据.xlsx", "").replace("_data.xlsx", "").replace(".xlsx", "")
     
     # 提取中文名称和代码部分
     parts = name.split("_")
+    
+    # 股票数据格式：{代码}_{名称}_技术数据.xlsx 或 指数数据格式：{名称}_{代码}_data.xlsx
     if len(parts) >= 2:
-        code_part = parts[-1]  # 最后一部分是代码
+        # 尝试判断是股票数据还是指数数据
+        # 如果第一部分是纯数字（可能是股票代码）
+        first_part = parts[0]
+        if first_part.isdigit() or (first_part.startswith("^") and len(first_part) > 1):
+            # 股票数据格式：代码在第一位
+            code_part = first_part
+        else:
+            # 指数数据格式：代码在最后
+            code_part = parts[-1]
     else:
         code_part = name
     
-    # 查找映射
+    # 查找映射（优先使用映射表）
     if code_part in SYMBOL_MAP:
         return SYMBOL_MAP[code_part]
     
-    # 如果没有映射，尝试从代码判断
+    # 根据代码前缀判断交易所（股票数据）
     if code_part.startswith("sh"):
         return (code_part[2:], "SSE")
     elif code_part.startswith("sz"):
@@ -59,7 +70,25 @@ def extract_symbol_and_exchange(filename: str) -> tuple[str, str]:
     elif code_part.startswith("bj"):
         return (code_part[2:], "BSE")
     elif code_part.startswith("^"):
-        return (code_part[1:], "NONE")
+        return (code_part[1:], "GLOBAL")  # 外盘指数使用GLOBAL
+    elif code_part.isdigit():
+        # 纯数字代码，根据前缀判断
+        if code_part.startswith("6"):  # 6开头，上交所
+            return (code_part, "SSE")
+        elif code_part.startswith("0") or code_part.startswith("3"):  # 0或3开头，深交所
+            return (code_part, "SZSE")
+        elif code_part.startswith("688") or code_part.startswith("689"):  # 科创板
+            return (code_part, "SSE")
+        elif code_part.startswith("43") or code_part.startswith("83") or code_part.startswith("87"):  # 北交所
+            return (code_part, "BSE")
+        elif len(code_part) == 5:  # 5位数字，可能是港股
+            return (code_part, "SEHK")  # 港股使用SEHK
+        elif len(code_part) == 4 or len(code_part) == 6:  # 4位或6位数字，可能是港股（如01952, 700等）
+            # 检查是否在港股代码范围（港股通常是4-5位数字）
+            if code_part.startswith("0") or code_part.startswith("7") or code_part.startswith("9"):
+                return (code_part, "SEHK")  # 港股
+        else:
+            return (code_part, "SSE")  # 默认上交所
     else:
         return (code_part, "SSE")  # 默认上交所
 
@@ -126,8 +155,11 @@ def convert_excel_to_csv(excel_path: Path) -> Path | None:
             "volume": "volume",
             "量": "volume",
             "成交额": "turnover",
+            "成交金额": "turnover",
             "Turnover": "turnover",
             "turnover": "turnover",
+            "amount": "turnover",  # 用户数据中成交额列名为amount
+            "Amount": "turnover",
             "额": "turnover",
             
             # 持仓量列（可选）
@@ -233,17 +265,26 @@ def main():
     print("=" * 70)
     print("VeighNa 数据格式转换工具")
     print("=" * 70)
-    print(f"数据目录: {DATA_DIR}")
+    print(f"指数数据目录: {INDEX_DATA_DIR}")
+    print(f"股票数据目录: {STOCK_DATA_DIR}")
     print(f"输出目录: {OUTPUT_DIR}")
     
-    # 获取所有Excel文件
-    excel_files = list(DATA_DIR.glob("*.xlsx"))
+    # 获取两个目录的所有Excel文件
+    index_files = list(INDEX_DATA_DIR.glob("*.xlsx")) if INDEX_DATA_DIR.exists() else []
+    stock_files = list(STOCK_DATA_DIR.glob("*.xlsx")) if STOCK_DATA_DIR.exists() else []
+    excel_files = index_files + stock_files
     
     if not excel_files:
-        print(f"\n未找到Excel文件在 {DATA_DIR}")
+        print(f"\n未找到Excel文件")
+        if not INDEX_DATA_DIR.exists():
+            print(f"  [警告] 指数数据目录不存在: {INDEX_DATA_DIR}")
+        if not STOCK_DATA_DIR.exists():
+            print(f"  [警告] 股票数据目录不存在: {STOCK_DATA_DIR}")
         return
     
     print(f"\n找到 {len(excel_files)} 个Excel文件")
+    print(f"  - 指数数据: {len(index_files)} 个")
+    print(f"  - 股票数据: {len(stock_files)} 个")
     
     # 转换每个文件
     success_count = 0
