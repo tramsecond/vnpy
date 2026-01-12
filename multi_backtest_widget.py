@@ -61,10 +61,11 @@ DEFAULT_CAPITAL = 1_000_000
 class BacktestResultTab(QtWidgets.QWidget):
     """单个标的的回测结果页签"""
     
-    def __init__(self, vt_symbol: str, symbol_name: str, df: pd.DataFrame, parent=None):
+    def __init__(self, vt_symbol: str, symbol_name: str, statistics: dict, df: pd.DataFrame, parent=None):
         super().__init__(parent)
         self.vt_symbol = vt_symbol
         self.symbol_name = symbol_name
+        self.statistics = statistics
         self.df = df
         
         self.init_ui()
@@ -114,19 +115,25 @@ class BacktestResultTab(QtWidgets.QWidget):
     def display_results(self):
         """显示回测结果"""
         try:
-            engine = BacktestingEngine()
-            stats = engine.calculate_statistics(self.df, output=False)
-            stats_text = self.format_statistics(stats)
+            # 显示统计指标
+            stats_text = self.format_statistics(self.statistics)
             self.stats_text.setPlainText(stats_text)
             
-            html = self.create_chart_html()
-            if self.chart_view:
-                self.chart_view.setHtml(html)
-            elif HAS_WEBENGINE is False:
-                temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
-                temp_file.write(html)
-                temp_file.close()
-                webbrowser.open(f'file:///{temp_file.name}')
+            # 使用BacktestingEngine.show_chart生成图表
+            # 创建临时引擎实例只是为了使用其show_chart方法
+            from vnpy_ctastrategy.backtesting import BacktestingEngine as BTEngine
+            temp_engine = BTEngine()
+            fig = temp_engine.show_chart(self.df)
+            
+            if fig:
+                html = fig.to_html(include_plotlyjs='cdn')
+                if self.chart_view:
+                    self.chart_view.setHtml(html)
+                elif HAS_WEBENGINE is False:
+                    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+                    temp_file.write(html)
+                    temp_file.close()
+                    webbrowser.open(f'file:///{temp_file.name}')
         except Exception as e:
             import traceback
             error_msg = f"显示结果失败:\n{str(e)}\n\n{traceback.format_exc()}"
@@ -176,78 +183,12 @@ class BacktestResultTab(QtWidgets.QWidget):
         ]
         return "\n".join(lines)
     
-    def create_chart_html(self) -> str:
-        """创建Plotly图表的HTML"""
-        fig = make_subplots(
-            rows=4,
-            cols=1,
-            subplot_titles=["账户净值", "净值回撤", "每日盈亏", "盈亏分布"],
-            vertical_spacing=0.06,
-            row_heights=[0.3, 0.2, 0.3, 0.2]
-        )
-        
-        # 账户净值
-        fig.add_trace(
-            go.Scatter(
-                x=self.df.index,
-                y=self.df['balance'],
-                mode='lines',
-                name='账户净值',
-                line=dict(color='blue', width=2)
-            ),
-            row=1, col=1
-        )
-        
-        # 净值回撤
-        fig.add_trace(
-            go.Scatter(
-                x=self.df.index,
-                y=self.df['drawdown'],
-                mode='lines',
-                name='净值回撤',
-                fill='tozeroy',
-                fillcolor='rgba(255,0,0,0.3)',
-                line=dict(color='red', width=1)
-            ),
-            row=2, col=1
-        )
-        
-        # 每日盈亏
-        colors = ['green' if x > 0 else 'red' for x in self.df['net_pnl']]
-        fig.add_trace(
-            go.Bar(
-                x=self.df.index,
-                y=self.df['net_pnl'],
-                name='每日盈亏',
-                marker_color=colors
-            ),
-            row=3, col=1
-        )
-        
-        # 盈亏分布
-        fig.add_trace(
-            go.Histogram(
-                x=self.df['net_pnl'],
-                nbinsx=50,
-                name='盈亏分布',
-                marker_color='lightblue'
-            ),
-            row=4, col=1
-        )
-        
-        fig.update_layout(
-            height=1000,
-            title_text=f"{self.symbol_name} ({self.vt_symbol}) 回测结果",
-            showlegend=False
-        )
-        
-        return fig.to_html(include_plotlyjs='cdn')
 
 
 class SummaryTab(QtWidgets.QWidget):
     """汇总统计页签"""
     
-    def __init__(self, results: Dict[str, Tuple[str, pd.DataFrame]], parent=None):
+    def __init__(self, results: Dict[str, Tuple[str, pd.DataFrame, dict]], parent=None):
         super().__init__(parent)
         self.results = results
         self.init_ui()
@@ -293,15 +234,17 @@ class SummaryTab(QtWidgets.QWidget):
     def display_summary(self):
         """显示汇总数据"""
         all_stats = []
-        for vt_symbol, (name, df) in self.results.items():
+        for vt_symbol, (name, df, statistics) in self.results.items():
             try:
-                engine = BacktestingEngine()
-                stats = engine.calculate_statistics(df, output=False)
+                # 直接使用已经计算好的统计信息
+                stats = statistics.copy()
                 stats['vt_symbol'] = vt_symbol
                 stats['name'] = name
                 all_stats.append(stats)
             except Exception as e:
-                print(f"计算 {name} 统计指标失败: {e}")
+                print(f"处理 {name} 统计指标失败: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         self.display_summary_table(all_stats)
@@ -666,14 +609,14 @@ class MultiBacktestWidget(QtWidgets.QWidget):
             QtWidgets.QApplication.processEvents()
             
             try:
-                df = self.run_single_backtest(
+                statistics, df = self.run_single_backtest(
                     vt_symbol, interval, start_date, end_date, rate, capital
                 )
                 
-                result_widget = BacktestResultTab(vt_symbol, name, df)
+                result_widget = BacktestResultTab(vt_symbol, name, statistics, df)
                 self.result_tabs.addTab(result_widget, name)
                 
-                self.results[vt_symbol] = (name, df)
+                self.results[vt_symbol] = (name, df, statistics)
                 
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
@@ -694,8 +637,8 @@ class MultiBacktestWidget(QtWidgets.QWidget):
     def run_single_backtest(
         self, vt_symbol: str, interval: Interval,
         start: datetime, end: datetime, rate: float, capital: float
-    ) -> pd.DataFrame:
-        """运行单个标的的回测"""
+    ) -> tuple[dict, pd.DataFrame]:
+        """运行单个标的的回测，返回统计信息和DataFrame"""
         # 获取选中的策略类
         strategy_class = self.strategy_combo.currentData()
         
@@ -777,11 +720,19 @@ class MultiBacktestWidget(QtWidgets.QWidget):
             print(f"[警告] 无法获取策略默认参数: {e}，使用空参数")
             default_setting = {}
         
-        # 使用选中的策略类及其默认参数
+        # 完全按照单标的回测的流程
         engine.add_strategy(strategy_class, default_setting)
         engine.load_data()
         engine.run_backtesting()
-        df = engine.calculate_result()
         
-        return df
+        # 步骤1：计算结果（返回不包含balance/drawdown的DataFrame）
+        result_df = engine.calculate_result()
+        
+        # 步骤2：计算统计信息（会修改engine.daily_df，添加balance/drawdown列）
+        result_statistics = engine.calculate_statistics(output=False)
+        
+        # 步骤3：使用engine.daily_df（包含balance/drawdown）
+        final_df = engine.daily_df.copy() if not engine.daily_df.empty else result_df
+        
+        return result_statistics, final_df
 

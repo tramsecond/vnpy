@@ -59,10 +59,11 @@ DEFAULT_CAPITAL = 1_000_000
 class BacktestResultWidget(QtWidgets.QWidget):
     """单个标的的回测结果页签"""
     
-    def __init__(self, vt_symbol: str, symbol_name: str, df: pd.DataFrame, parent=None):
+    def __init__(self, vt_symbol: str, symbol_name: str, statistics: dict, df: pd.DataFrame, parent=None):
         super().__init__(parent)
         self.vt_symbol = vt_symbol
         self.symbol_name = symbol_name
+        self.statistics = statistics
         self.df = df
         
         self.init_ui()
@@ -92,48 +93,83 @@ class BacktestResultWidget(QtWidgets.QWidget):
         # 右侧：图表
         if HAS_WEBENGINE:
             self.chart_view = QtWebEngineWidgets.QWebEngineView()
+            self.chart_view.setMinimumSize(800, 600)  # 设置最小尺寸
             splitter.addWidget(stats_widget)
             splitter.addWidget(self.chart_view)
             splitter.setStretchFactor(0, 1)
-            splitter.setStretchFactor(1, 2)
+            splitter.setStretchFactor(1, 3)  # 增加图表的比例
+            layout.addWidget(splitter)
         else:
             # 如果没有WebEngine，只显示统计指标，图表在浏览器中打开
             self.chart_view = None
             layout.addWidget(stats_widget)
             stats_widget.setMaximumWidth(400)
         
-        layout.addWidget(splitter)
         self.setLayout(layout)
     
     def display_results(self):
         """显示回测结果"""
-        # 计算统计指标
         try:
-            engine = BacktestingEngine()
-            # CTA回测引擎的calculate_statistics支持df参数
-            # 如果df已经是计算好的结果，直接使用
-            stats = engine.calculate_statistics(self.df, output=False)
+            # 使用已经计算好的统计指标
+            stats_text = self.format_statistics(self.statistics)
+            self.stats_text.setPlainText(stats_text)
+            
+            # 检查DataFrame是否为空
+            if self.df.empty:
+                error_msg = "DataFrame为空，无法生成图表"
+                print(f"[错误] {error_msg}")
+                self.stats_text.append(f"\n\n[错误] {error_msg}")
+                return
+            
+            print(f"[调试] DataFrame列: {self.df.columns.tolist()}")
+            print(f"[调试] DataFrame行数: {len(self.df)}")
+            print(f"[调试] DataFrame索引类型: {type(self.df.index)}")
+            
+            # 确保DataFrame包含必要的列
+            required_columns = ['balance', 'drawdown', 'net_pnl']
+            missing_columns = [col for col in required_columns if col not in self.df.columns]
+            if missing_columns:
+                error_msg = f"DataFrame缺少必要的列: {missing_columns}\n可用的列: {self.df.columns.tolist()}"
+                print(f"[错误] {error_msg}")
+                self.stats_text.append(f"\n\n[错误] {error_msg}")
+                return
+            
+            # 使用BacktestingEngine.show_chart生成图表
+            from vnpy_ctastrategy.backtesting import BacktestingEngine as BTEngine
+            temp_engine = BTEngine()
+            print(f"[调试] 调用 show_chart...")
+            fig = temp_engine.show_chart(self.df)
+            print(f"[调试] show_chart 返回值类型: {type(fig)}")
+            
+            if fig is not None:
+                print(f"[调试] 转换为HTML...")
+                html = fig.to_html(include_plotlyjs='cdn', config={'responsive': True})
+                print(f"[调试] HTML长度: {len(html)}")
+                
+                if self.chart_view:
+                    print(f"[调试] 设置HTML到WebEngineView...")
+                    # 确保WebEngineView已经显示
+                    self.chart_view.show()
+                    # 使用setHtml而不是setUrl
+                    self.chart_view.setHtml(html, QtCore.QUrl("about:blank"))
+                    print(f"[调试] HTML已设置，WebEngineView尺寸: {self.chart_view.size()}")
+                else:
+                    # 如果没有WebEngine，保存为临时HTML文件并在浏览器中打开
+                    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+                    temp_file.write(html)
+                    temp_file.close()
+                    print(f"[调试] 在浏览器中打开: {temp_file.name}")
+                    webbrowser.open(f'file:///{temp_file.name}')
+            else:
+                error_msg = "show_chart 返回 None，可能DataFrame为空或格式不正确"
+                print(f"[错误] {error_msg}")
+                self.stats_text.append(f"\n\n[错误] {error_msg}")
+                
         except Exception as e:
-            # 如果计算失败，显示错误
             import traceback
-            error_msg = f"统计指标计算失败:\n{str(e)}\n\n{traceback.format_exc()}"
+            error_msg = f"显示结果失败:\n{str(e)}\n\n{traceback.format_exc()}"
+            print(error_msg)
             self.stats_text.setPlainText(error_msg)
-            return
-        
-        # 显示统计指标
-        stats_text = self.format_statistics(stats)
-        self.stats_text.setPlainText(stats_text)
-        
-        # 显示图表
-        html = self.create_chart_html()
-        if self.chart_view:
-            self.chart_view.setHtml(html)
-        else:
-            # 如果没有WebEngine，保存为临时HTML文件并在浏览器中打开
-            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
-            temp_file.write(html)
-            temp_file.close()
-            webbrowser.open(f'file:///{temp_file.name}')
     
     def format_statistics(self, stats: dict) -> str:
         """格式化统计指标"""
@@ -179,79 +215,12 @@ class BacktestResultWidget(QtWidgets.QWidget):
         ]
         return "\n".join(lines)
     
-    def create_chart_html(self) -> str:
-        """创建Plotly图表的HTML"""
-        fig = make_subplots(
-            rows=4,
-            cols=1,
-            subplot_titles=["账户净值", "净值回撤", "每日盈亏", "盈亏分布"],
-            vertical_spacing=0.06,
-            row_heights=[0.3, 0.2, 0.3, 0.2]
-        )
-        
-        # 账户净值
-        fig.add_trace(
-            go.Scatter(
-                x=self.df.index,
-                y=self.df['balance'],
-                mode='lines',
-                name='账户净值',
-                line=dict(color='blue', width=2)
-            ),
-            row=1, col=1
-        )
-        
-        # 净值回撤
-        fig.add_trace(
-            go.Scatter(
-                x=self.df.index,
-                y=self.df['drawdown'],
-                mode='lines',
-                name='净值回撤',
-                fill='tozeroy',
-                fillcolor='rgba(255,0,0,0.3)',
-                line=dict(color='red', width=1)
-            ),
-            row=2, col=1
-        )
-        
-        # 每日盈亏
-        colors = ['green' if x > 0 else 'red' for x in self.df['net_pnl']]
-        fig.add_trace(
-            go.Bar(
-                x=self.df.index,
-                y=self.df['net_pnl'],
-                name='每日盈亏',
-                marker_color=colors
-            ),
-            row=3, col=1
-        )
-        
-        # 盈亏分布
-        fig.add_trace(
-            go.Histogram(
-                x=self.df['net_pnl'],
-                nbinsx=50,
-                name='盈亏分布',
-                marker_color='lightblue'
-            ),
-            row=4, col=1
-        )
-        
-        fig.update_layout(
-            height=1000,
-            title_text=f"{self.symbol_name} ({self.vt_symbol}) 回测结果",
-            showlegend=False
-        )
-        
-        # 转换为HTML
-        return fig.to_html(include_plotlyjs='cdn')
 
 
 class SummaryWidget(QtWidgets.QWidget):
     """汇总页签：显示所有标的的平均数据"""
     
-    def __init__(self, results: Dict[str, Tuple[str, pd.DataFrame]], parent=None):
+    def __init__(self, results: Dict[str, Tuple[str, pd.DataFrame, dict]], parent=None):
         super().__init__(parent)
         self.results = results
         self.init_ui()
@@ -295,17 +264,17 @@ class SummaryWidget(QtWidgets.QWidget):
     
     def display_summary(self):
         """显示汇总数据"""
-        # 计算每个标的的统计指标
+        # 使用已经计算好的统计指标
         all_stats = []
-        for vt_symbol, (name, df) in self.results.items():
+        for vt_symbol, (name, df, statistics) in self.results.items():
             try:
-                engine = BacktestingEngine()
-                stats = engine.calculate_statistics(df, output=False)
+                # 直接使用已经计算好的统计信息
+                stats = statistics.copy()
                 stats['vt_symbol'] = vt_symbol
                 stats['name'] = name
                 all_stats.append(stats)
             except Exception as e:
-                print(f"计算 {name} 统计指标失败: {e}")
+                print(f"处理 {name} 统计指标失败: {e}")
                 import traceback
                 traceback.print_exc()
                 continue
@@ -452,7 +421,7 @@ class MultiSymbolBacktestDialog(QtWidgets.QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.results: Dict[str, Tuple[str, pd.DataFrame]] = {}
+        self.results: Dict[str, Tuple[str, pd.DataFrame, dict]] = {}
         self.init_ui()
     
     def init_ui(self):
@@ -575,16 +544,16 @@ class MultiSymbolBacktestDialog(QtWidgets.QDialog):
             
             try:
                 # 运行回测
-                df = self.run_single_backtest(
+                statistics, df = self.run_single_backtest(
                     vt_symbol, interval, start_date, end_date, rate, capital
                 )
                 
                 # 创建结果页签
-                result_widget = BacktestResultWidget(vt_symbol, name, df)
+                result_widget = BacktestResultWidget(vt_symbol, name, statistics, df)
                 self.result_tabs.addTab(result_widget, name)
                 
                 # 保存结果
-                self.results[vt_symbol] = (name, df)
+                self.results[vt_symbol] = (name, df, statistics)
                 
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
@@ -606,8 +575,8 @@ class MultiSymbolBacktestDialog(QtWidgets.QDialog):
     def run_single_backtest(
         self, vt_symbol: str, interval: Interval,
         start: datetime, end: datetime, rate: float, capital: float
-    ) -> pd.DataFrame:
-        """运行单个标的的回测"""
+    ) -> tuple[dict, pd.DataFrame]:
+        """运行单个标的的回测，返回统计信息和DataFrame"""
         engine = BacktestingEngine()
         engine.set_parameters(
             vt_symbol=vt_symbol,
@@ -624,9 +593,27 @@ class MultiSymbolBacktestDialog(QtWidgets.QDialog):
         engine.add_strategy(AtrRsiStrategy, {})
         engine.load_data()
         engine.run_backtesting()
-        df = engine.calculate_result()
         
-        return df
+        # 完全按照单标的回测的流程
+        # 步骤1：计算结果（返回不包含balance/drawdown的DataFrame）
+        result_df = engine.calculate_result()
+        print(f"[调试 {vt_symbol}] calculate_result 完成，行数: {len(result_df)}")
+        
+        # 步骤2：计算统计信息（会修改engine.daily_df，添加balance/drawdown列）
+        result_statistics = engine.calculate_statistics(output=False)
+        print(f"[调试 {vt_symbol}] calculate_statistics 完成")
+        
+        # 步骤3：使用engine.daily_df（包含balance/drawdown）
+        final_df = engine.daily_df.copy() if not engine.daily_df.empty else result_df
+        print(f"[调试 {vt_symbol}] final_df 行数: {len(final_df)}, 列: {final_df.columns.tolist()}")
+        
+        # 验证DataFrame包含必要的列
+        required_cols = ['balance', 'drawdown', 'net_pnl']
+        missing = [col for col in required_cols if col not in final_df.columns]
+        if missing:
+            print(f"[警告 {vt_symbol}] 缺少列: {missing}")
+        
+        return result_statistics, final_df
 
 
 def main():

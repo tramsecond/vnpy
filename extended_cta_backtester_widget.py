@@ -5,11 +5,6 @@
 import sys
 from functools import partial
 
-# 设置输出编码
-if sys.platform == "win32":
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
 from PySide6 import QtWidgets, QtCore, QtGui
 from vnpy.trader.engine import MainEngine
 from vnpy.event import EventEngine
@@ -20,15 +15,13 @@ try:
     HAS_CTA_BACKTESTER = True
 except ImportError:
     HAS_CTA_BACKTESTER = False
-    print("警告: 无法导入CTA回测模块")
 
-# 导入多标的回测Widget
+# 导入多标的回测Widget（严格模式）
 try:
-    from multi_backtest_widget import MultiBacktestWidget
+    from multi_backtest_strict import MultiBacktestStrictWidget
     HAS_MULTI_BACKTEST = True
 except ImportError:
     HAS_MULTI_BACKTEST = False
-    print("警告: 无法导入多标的回测模块")
 
 
 class ExtendedCtaBacktesterWidget(QtWidgets.QWidget):
@@ -65,14 +58,14 @@ class ExtendedCtaBacktesterWidget(QtWidgets.QWidget):
             error_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             self.tabs.addTab(error_label, "单标的回测")
         
-        # 标签页2: 多标的回测
+        # 标签页2: 多标的回测（严格模式）
         if HAS_MULTI_BACKTEST:
             try:
-                # 传递 main_engine 和 event_engine，以便加载所有策略
-                multi_backtest_widget = MultiBacktestWidget(
-                    parent=self,
+                # 使用严格模式的多标的回测，完全遵循单标的回测逻辑
+                multi_backtest_widget = MultiBacktestStrictWidget(
                     main_engine=self.main_engine,
-                    event_engine=self.event_engine
+                    event_engine=self.event_engine,
+                    parent=self
                 )
                 self.tabs.addTab(multi_backtest_widget, "多标的回测")
             except Exception as e:
@@ -82,7 +75,7 @@ class ExtendedCtaBacktesterWidget(QtWidgets.QWidget):
                 import traceback
                 traceback.print_exc()
         else:
-            error_label = QtWidgets.QLabel("多标的回测模块未加载\n请确保 multi_backtest_widget.py 文件存在")
+            error_label = QtWidgets.QLabel("多标的回测模块未加载\n请确保 multi_backtest_strict.py 文件存在")
             error_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             self.tabs.addTab(error_label, "多标的回测")
         

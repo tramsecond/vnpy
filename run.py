@@ -81,9 +81,7 @@ class MainWindowWithMultiBacktest(MainWindow):
                             self.main_engine, self.event_engine
                         )
                         self.widgets[name] = self.extended_backtester_widget
-                        print(f"[信息] 已加载扩展CTA回测Widget（包含多标的回测功能）")
                     except Exception as e:
-                        print(f"[错误] 加载扩展CTA回测Widget失败: {e}")
                         import traceback
                         traceback.print_exc()
                         # 如果加载失败，使用原有的Widget
@@ -106,7 +104,6 @@ class MainWindowWithMultiBacktest(MainWindow):
                     self.widgets[name] = widget
         except Exception as e:
             # 如果出现异常，使用原有逻辑
-            print(f"[错误] 检查CTA回测Widget时出错: {e}")
             import traceback
             traceback.print_exc()
             widget = self.widgets.get(name, None)
