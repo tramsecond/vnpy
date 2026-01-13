@@ -423,6 +423,9 @@ class MultiBacktestStrictWidget(QtWidgets.QWidget):
         self.backtester_engine: BacktesterEngine = self.main_engine.get_engine(APP_NAME)
         self.backtester_engine.init_engine()
         
+        # 手动加载用户策略（确保从当前目录加载）
+        self.load_user_strategies()
+        
         # 获取策略类列表
         self.class_names: List[str] = self.backtester_engine.get_strategy_class_names()
         self.settings: Dict[str, dict] = {}
@@ -559,6 +562,19 @@ class MultiBacktestStrictWidget(QtWidgets.QWidget):
         hbox.addWidget(self.result_tabs)
         
         self.setLayout(hbox)
+    
+    def load_user_strategies(self):
+        """手动加载用户自定义策略"""
+        try:
+            from pathlib import Path
+            strategies_path = Path(__file__).parent / "strategies"
+            if strategies_path.exists():
+                self.backtester_engine.load_strategy_class_from_folder(
+                    strategies_path, 
+                    "strategies"
+                )
+        except Exception as e:
+            pass  # 静默失败，不影响系统内置策略
     
     def load_symbols_from_database(self):
         """从数据库加载所有可用的标的"""

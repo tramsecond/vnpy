@@ -37,6 +37,40 @@ class ExtendedCtaBacktesterWidget(QtWidgets.QWidget):
         
         self.init_ui()
     
+    def load_user_strategies_for_single_backtest(self, backtest_widget):
+        """为单标的回测加载用户自定义策略"""
+        try:
+            from pathlib import Path
+            
+            # 获取backtester_engine
+            backtester_engine = backtest_widget.backtester_engine
+            
+            # 从脚本所在目录加载strategies文件夹
+            strategies_path = Path(__file__).parent / "strategies"
+            if strategies_path.exists():
+                backtester_engine.load_strategy_class_from_folder(
+                    strategies_path, 
+                    "strategies"
+                )
+                
+                # 获取所有策略类名
+                class_names = backtester_engine.get_strategy_class_names()
+                class_names.sort()
+                
+                # 为新加载的策略初始化默认设置
+                for class_name in class_names:
+                    if class_name not in backtest_widget.settings:
+                        setting = backtester_engine.get_default_setting(class_name)
+                        backtest_widget.settings[class_name] = setting
+                
+                # 重新加载策略列表到UI
+                backtest_widget.class_combo.clear()
+                backtest_widget.class_combo.addItems(class_names)
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+    
     def init_ui(self):
         """初始化UI"""
         self.setWindowTitle("CTA回测")
@@ -48,6 +82,10 @@ class ExtendedCtaBacktesterWidget(QtWidgets.QWidget):
         if HAS_CTA_BACKTESTER:
             try:
                 single_backtest_widget = BacktesterManager(self.main_engine, self.event_engine)
+                
+                # 手动加载用户自定义策略
+                self.load_user_strategies_for_single_backtest(single_backtest_widget)
+                
                 self.tabs.addTab(single_backtest_widget, "单标的回测")
             except Exception as e:
                 error_label = QtWidgets.QLabel(f"CTA回测模块加载失败:\n{str(e)}")
